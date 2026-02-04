@@ -126,9 +126,16 @@ def get_firebase_batches():
     """Blocking call to get data from Firebase"""
     return db.reference("/sensor/batchAcceleration").get()
 
+import http
+
+async def health_check(path, request_headers):
+    if path == "/health":
+        return http.HTTPStatus.OK, [], b"OK\n"
+    return None
+
 async def main():
     print(f"[*] Starting WebSocket server on port {WS_PORT}...")
-    async with websockets.serve(handler, "localhost", WS_PORT):
+    async with websockets.serve(handler, "0.0.0.0", WS_PORT, process_request=health_check):
         print(f"[+] WebSocket server running")
         print(f"[*] Starting real-time monitoring loop...\n")
 
