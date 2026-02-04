@@ -45,3 +45,18 @@ data/
 # Jupyter
 # ======================
 .ipynb_checkpoints/
+
+# ======================
+# Next.js / Frontend
+# ======================
+frontend/.next/
+frontend/node_modules/
+frontend/.env.local
+frontend/.env*.local
+
+# ======================
+# Firebase Credentials
+# ======================
+firebase_key.json
+**/firebase_key.json
+

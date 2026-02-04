@@ -1,0 +1,5 @@
+numpy
+joblib
+firebase-admin
+websockets
+scikit-learn

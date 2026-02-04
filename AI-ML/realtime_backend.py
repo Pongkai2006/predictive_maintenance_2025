@@ -1,0 +1,204 @@
+"""
+Real-time Predictive Maintenance Backend
+Connects Firebase Realtime Database with ML model
+
+Architecture:
+1. Listen to /sensor/batchAcceleration for ESP32 batch uploads
+2. Build sliding window buffer (50 samples)
+3. Extract features from window
+4. Run RandomForest classifier
+5. Publish results to /sensor/status for frontend
+"""
+
+import os
+import time
+import joblib
+import numpy as np
+import asyncio
+import websockets
+import json
+from firebase_admin import credentials, initialize_app, db
+from collections import deque
+from concurrent.futures import ThreadPoolExecutor
+
+# ================= CONFIG =================
+WINDOW_SIZE = 10         # Smaller window for smoother updates
+STABILITY_THRESHOLD = 3  # Consecutive BAD predictions before declaring BAD
+CONFIDENCE_THRESHOLD = 0.7
+POLL_INTERVAL = 1.0      # seconds
+WS_PORT = int(os.environ.get("PORT", 8765))
+# =========================================
+
+print("[*] Starting Predictive Maintenance Backend...")
+
+# Initialize Firebase Admin SDK
+try:
+    if os.path.exists("firebase_key.json"):
+        cred = credentials.Certificate("firebase_key.json")
+    else:
+        # Load from environment variables (Render/Cloud)
+        print("[*] Loading credentials from environment...")
+        firebase_config = {
+            "type": os.environ.get("FIREBASE_TYPE"),
+            "project_id": os.environ.get("FIREBASE_PROJECT_ID"),
+            "private_key_id": os.environ.get("FIREBASE_PRIVATE_KEY_ID"),
+            "private_key": os.environ.get("FIREBASE_PRIVATE_KEY", "").replace("\\n", "\n"),
+            "client_email": os.environ.get("FIREBASE_CLIENT_EMAIL"),
+            "client_id": os.environ.get("FIREBASE_CLIENT_ID"),
+            "auth_uri": os.environ.get("FIREBASE_AUTH_URI"),
+            "token_uri": os.environ.get("FIREBASE_TOKEN_URI"),
+            "auth_provider_x509_cert_url": os.environ.get("FIREBASE_AUTH_PROVIDER_CERT_URL"),
+            "client_x509_cert_url": os.environ.get("FIREBASE_CLIENT_CERT_URL")
+        }
+        cred = credentials.Certificate(firebase_config)
+
+    initialize_app(cred, {
+        "databaseURL": "https://cloud-esp32-567c6-default-rtdb.asia-southeast1.firebasedatabase.app/"
+    })
+    print("[+] Connected to Firebase")
+except Exception as e:
+    print(f"[-] Firebase initialization failed: {e}")
+    # print("Make sure 'firebase_key.json' exists or env vars are set")
+    # exit(1)
+
+# Load trained model
+try:
+    model = joblib.load("pdm_binary.pkl")
+    print("[+] Loaded ML model (pdm_binary.pkl)")
+except Exception as e:
+    print(f"[-] Model loading failed: {e}")
+    print("Run 'python class_train.py' first to create the model")
+    exit(1)
+
+# Buffer for sliding window
+buffer = deque(maxlen=WINDOW_SIZE)
+clients = set()
+
+def extract_features(data_points):
+    """
+    Extract features matching the training process
+    data_points: list of (x, y, z) tuples
+    """
+    x = np.array([p[0] for p in data_points])
+    y = np.array([p[1] for p in data_points])
+    z = np.array([p[2] for p in data_points])
+    
+    mag = np.sqrt(x**2 + y**2 + z**2)
+    
+    # Features must match class_train.py exactly
+    return [[
+        x.mean(), y.mean(), z.mean(),           # Mean values
+        x.std(), y.std(), z.std(),              # Standard deviation
+        np.sqrt((x**2).mean()),                 # RMS X
+        np.sqrt((y**2).mean()),                 # RMS Y
+        np.sqrt((z**2).mean()),                 # RMS Z
+        mag.mean(),                             # Magnitude mean
+        mag.max(),                              # Magnitude max
+        mag.min(),                              # Magnitude min
+        np.ptp(mag)                             # Peak-to-peak
+    ]]
+
+async def broadcast_status(state, prob_bad, timestamp=None):
+    """Broadcast classification result to WebSockets"""
+    if not clients:
+        return
+        
+    data = json.dumps({
+        "state": state,
+        "prob_bad": prob_bad,
+        "updated_at": int(time.time() * 1000),  # Server time
+        "data_timestamp": timestamp             # Sensor time (sync key)
+    })
+    
+    await asyncio.gather(*[client.send(data) for client in clients], return_exceptions=True)
+    print(f"[>] Broadcast: {state} ({prob_bad*100:.1f}%) to {len(clients)} clients")
+
+async def handler(websocket):
+    clients.add(websocket)
+    print(f"[+] Client connected from {websocket.remote_address}")
+    try:
+        await websocket.wait_closed()
+    finally:
+        clients.remove(websocket)
+        print(f"[-] Client disconnected")
+
+def get_firebase_batches():
+    """Blocking call to get data from Firebase"""
+    return db.reference("/sensor/batchAcceleration").get()
+
+async def main():
+    print(f"[*] Starting WebSocket server on port {WS_PORT}...")
+    async with websockets.serve(handler, "localhost", WS_PORT):
+        print(f"[+] WebSocket server running")
+        print(f"[*] Starting real-time monitoring loop...\n")
+
+        processed_batches = set()
+        loop = asyncio.get_running_loop()
+        executor = ThreadPoolExecutor(max_workers=1)
+
+        while True:
+            try:
+                # Run blocking Firebase call in a separate thread
+                batches = await loop.run_in_executor(executor, get_firebase_batches)
+                
+                if not batches:
+                    print("[.] Waiting for data...", end='\r')
+                    await asyncio.sleep(POLL_INTERVAL)
+                    continue
+                
+                batch_keys = sorted(batches.keys())
+                new_batches_found = False
+                
+                # Process only new batches
+                for key in batch_keys:
+                    if key in processed_batches:
+                        continue
+                        
+                    new_batches_found = True
+                    batch_data = batches[key]
+                    print(f"[*] Processing batch {key} ({len(batch_data)} samples)")
+                    
+                    # Add all batch data to buffer
+                    batch_max_prob = 0.0
+                    
+                    for item in batch_data:
+                        buffer.append((item["X"], item["Y"], item["Z"]))
+                    
+                        # Process with sliding window every time we add a sample
+                        if len(buffer) >= WINDOW_SIZE:
+                            # Extract features from current window
+                            features = extract_features(list(buffer))
+                            
+                            # Get model prediction
+                            prob = model.predict_proba(features)[0]
+                            prob_bad = prob[1]
+                            
+                            # Track peak probability in this batch
+                            if prob_bad > batch_max_prob:
+                                batch_max_prob = prob_bad
+        
+                    # End of batch processing
+                    state = "BAD" if batch_max_prob > CONFIDENCE_THRESHOLD else "GOOD"
+                    last_timestamp = batch_data[-1].get("timestamp", int(time.time()*1000))
+        
+                    # Broadcast immediately via WebSocket
+                    await broadcast_status(state, batch_max_prob, last_timestamp)
+                        
+                    print(f"[i] Processed {len(batch_data)} samples")
+                    processed_batches.add(key)
+                
+                if not new_batches_found:
+                    await asyncio.sleep(POLL_INTERVAL)
+                else:
+                    # Short sleep to prevent CPU spinning if data is pouring in
+                    await asyncio.sleep(0.1)
+                
+            except Exception as e:
+                print(f"[!] Unexpected error: {e}")
+                await asyncio.sleep(1)
+
+if __name__ == "__main__":
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\n\n[*] Shutting down gracefully...")
