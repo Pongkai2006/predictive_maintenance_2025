@@ -23,7 +23,7 @@ Thumbs.db
 # ======================
 # Machine Learning
 # ======================
-*.pkl
+# *.pkl
 *.joblib
 *.h5
 *.onnx
