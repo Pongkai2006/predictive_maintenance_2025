@@ -1,9 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef } from 'react';
-import { MachineStatusCard } from './components/MachineStatusCard';
-import { VibrationChart } from './components/VibrationChart';
-import { StatsCard } from './components/StatsCard';
+import { MachineStatusCard } from '@/components/MachineStatusCard';
+import { VibrationChart } from '@/components/VibrationChart';
+import { StatsCard } from '@/components/StatsCard';
 import { Activity, Clock, AlertCircle } from 'lucide-react';
 
 export interface VibrationData {
@@ -65,7 +65,8 @@ export default function App() {
 
       // 2. WebSocket for AI Status
       const connectWebSocket = () => {
-        ws = new WebSocket('ws://localhost:8765');
+        // ws = new WebSocket('ws://localhost:8765'); // Localhost
+        ws = new WebSocket('wss://pbl-backend-okmj.onrender.com'); // Production (Render)
 
         ws.onopen = () => {
           console.log('WebSocket Connected');
