@@ -139,20 +139,19 @@ async def main():
         print(f"[+] WebSocket server running")
         print(f"[*] Starting True Real-Time monitoring loop...\n")
 
-        # --- 1. Startup: Sync with Stream Head ---
-        print("[*] Syncing with stream head...")
-        # Get the very last batch key to start "Forward-Only" processing
-        last_key = None
+        # --- 1. Startup: HARD RESET (Requested by User) ---
+        print("[!] PERFORMING HARD RESET: Clearing Database...")
         try:
-            initial_snap = db.reference("/sensor/batchAcceleration").order_by_key().limit_to_last(1).get()
-            if initial_snap:
-                last_key = list(initial_snap.keys())[0]
-                print(f"[+] Synced. Processing data arriving AFTER key: {last_key}")
-            else:
-                print("[.] Database empty. Waiting for first batch...")
+            # Delete everything to start fresh
+            db.reference("/sensor/batchAcceleration").delete()
+            db.reference("/sensor/status").delete()
+            print("[+] Database Wiped. Ready for fresh real-time data.")
         except Exception as e:
-            print(f"[!] Init Error: {e}")
-        # -----------------------------------------
+            print(f"[!] Wipe Failed (Not Critical): {e}")
+        
+        # We start with no last_key because DB is empty
+        last_key = None
+        # --------------------------------------------------
 
         processed_batches = set()
         total_processed_count = 0
