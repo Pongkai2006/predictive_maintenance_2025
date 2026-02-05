@@ -139,28 +139,40 @@ async def main():
         print(f"[+] WebSocket server running")
         print(f"[*] Starting True Real-Time monitoring loop...\n")
 
-        # --- 1. SYSTEM RENEWAL: HARD RESET ---
-        print("[!] PERFORMING HARD RESET: Wiping old database data...")
+        # --- 1. Startup: Sync with Stream Head ---
+        print("[*] Syncing with stream head...")
+        # Get the very last batch key to start "Forward-Only" processing
+        last_key = None
         try:
-            # Delete everything to ensure clean slate
-            db.reference("/sensor/batchAcceleration").delete()
-            db.reference("/sensor/status").delete()
-            print("[+] Database Wiped. Ready for fresh real-time data.")
+            initial_snap = db.reference("/sensor/batchAcceleration").order_by_key().limit_to_last(1).get()
+            if initial_snap:
+                last_key = list(initial_snap.keys())[0]
+                print(f"[+] Synced. Processing data arriving AFTER key: {last_key}")
+            else:
+                print("[.] Database empty. Waiting for first batch...")
         except Exception as e:
-            print(f"[!] Wipe Failed (Not Critical): {e}")
-        # -------------------------------------
+            print(f"[!] Init Error: {e}")
+        # -----------------------------------------
 
         processed_batches = set()
-        total_processed_count = 0 
+        total_processed_count = 0
         loop = asyncio.get_running_loop()
         executor = ThreadPoolExecutor(max_workers=1)
 
         while True:
             try:
                 # --- 2. Forward-Only Query ---
-                # Since we wiped the DB, we can just get whatever is there.
-                # It is guaranteed to be new.
-                batches = await loop.run_in_executor(executor, lambda: db.reference("/sensor/batchAcceleration").order_by_key().limit_to_last(10).get())
+                # Fetch only batches NEWER than our last seen key
+                query = db.reference("/sensor/batchAcceleration").order_by_key()
+                
+                if last_key:
+                    query = query.start_after(last_key)
+                
+                # Limit to 10 to catch up efficiently
+                query = query.limit_to_first(10)
+                
+                # Run blocking Firebase call
+                batches = await loop.run_in_executor(executor, query.get)
                 
                 if not batches:
                     await asyncio.sleep(0.1)
@@ -169,25 +181,8 @@ async def main():
                 batch_keys = sorted(batches.keys())
                 
                 for key in batch_keys:
-                    if key in processed_batches:
-                        continue
-                        
                     batch_data = batches[key]
-                    
-                    # --- 3. STRICT TIME FILTER ---
-                    # Logic Gate: If data is older than 10 seconds, DROP IT.
-                    # This protects us if the DB wipe failed or old data lingered.
-                    last_sample_time = batch_data[-1].get("timestamp", 0)
-                    now = int(time.time() * 1000)
-                    age_seconds = (now - last_sample_time) / 1000
-                    
-                    if age_seconds > 10:
-                        print(f"[x] Dropped Old Data (Age: {age_seconds:.1f}s) - Key: {key}")
-                        processed_batches.add(key) 
-                        continue # Skip processing
-                    # -----------------------------
-
-                    print(f"[*] Processing NEW batch {key} ({len(batch_data)} samples) | Latency: {age_seconds:.2f}s")
+                    print(f"[*] Processing NEW batch {key} ({len(batch_data)} samples)")
                     
                     # Add all batch data to buffer
                     batch_max_prob = 0.0
