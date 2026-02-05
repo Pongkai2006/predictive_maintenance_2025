@@ -45,7 +45,7 @@ export default function App() {
 
     const setupConnections = async () => {
       // 1. Firebase for Raw Data (Graph)
-      const { subscribeToRawData, getLatestRawData, checkConnection } = await import('../lib/firebaseService');
+      const { subscribeToRawData, getLatestRawData, checkConnection, subscribeToStatus } = await import('../lib/firebaseService');
 
       // Check Firebase connection
       const unsubConnection = checkConnection((connected) => {
@@ -56,6 +56,17 @@ export default function App() {
       // Subscribe to raw sensor data from /sensor/batchAcceleration
       const unsubRaw = subscribeToRawData((data) => {
         incomingBuffer.current.push(data);
+      });
+
+      // Subscribe to status from Firebase (Robust fallback for WebSocket)
+      const unsubStatus = subscribeToStatus((data) => {
+        setStatus({
+          condition: data.state,
+          confidence: data.prob_bad * 100,
+          lastUpdate: new Date(data.updated_at),
+          timestamp: data.data_timestamp
+        });
+        setHasData(true);
       });
 
       // Load initial chart data
@@ -103,6 +114,7 @@ export default function App() {
       return () => {
         unsubConnection();
         unsubRaw();
+        unsubStatus();
         ws?.close();
       };
     };
