@@ -53,12 +53,8 @@ export default function App() {
         if (!connected) console.warn('Firebase disconnected');
       });
 
-      // Subscribe to raw sensor data from /sensor/batchAcceleration
-      const unsubRaw = subscribeToRawData((data) => {
-        incomingBuffer.current.push(data);
-      });
-
       // Subscribe to status from Firebase (Robust fallback for WebSocket)
+      // Note: Raw data now comes via WebSocket only.
       const unsubStatus = subscribeToStatus((data) => {
         setStatus({
           condition: data.state,
@@ -77,25 +73,53 @@ export default function App() {
         }
       });
 
-      // 2. WebSocket for AI Status
+      // 1. WebSocket for Everything (Status + Graph)
       const connectWebSocket = () => {
         // ws = new WebSocket('ws://localhost:8765'); // Localhost
         ws = new WebSocket('wss://pbl-backend-okmj.onrender.com'); // Production (Render)
 
         ws.onopen = () => {
           console.log('WebSocket Connected');
+          setIsConnected(true);
         };
 
         ws.onmessage = (event) => {
           try {
             const data = JSON.parse(event.data);
-            // Push to queue for synchronized playback
-            statusQueue.current.push({
-              condition: data.state,
-              confidence: data.prob_bad * 100,
-              lastUpdate: new Date(data.updated_at),
-              timestamp: data.data_timestamp
-            });
+
+            // 1. Update Graph Data (Direct from WS)
+            if (data.X !== undefined) {
+              const newPoint: RawSensorData = {
+                X: data.X,
+                Y: data.Y,
+                Z: data.Z,
+                timestamp: data.timestamp
+              };
+
+              // Instant Graph Update
+              setVibrationData((prev) => {
+                const updated = [...prev, newPoint];
+                return updated.slice(-300); // Keep last 300
+              });
+
+              setAvgVibration({
+                x: Number(data.X.toFixed(2)),
+                y: Number(data.Y.toFixed(2)),
+                z: Number(data.Z.toFixed(2))
+              });
+              setCurrentDataTimestamp(data.timestamp);
+            }
+
+            // 2. Update Status (Syncs with this data point)
+            if (data.state) {
+              setStatus({
+                condition: data.state,
+                confidence: data.prob_bad * 100,
+                lastUpdate: new Date(data.updated_at),
+                timestamp: data.timestamp
+              });
+            }
+
             setHasData(true);
           } catch (e) {
             console.error('Failed to parse WS message:', e);
@@ -104,16 +128,16 @@ export default function App() {
 
         ws.onclose = () => {
           console.log('WebSocket Disconnected. Reconnecting in 3s...');
+          setIsConnected(false);
           setTimeout(connectWebSocket, 3000);
         };
       };
 
       connectWebSocket();
 
-      // Cleanup
       return () => {
         unsubConnection();
-        unsubRaw();
+        // unsubRaw(); // Removed
         unsubStatus();
         ws?.close();
       };

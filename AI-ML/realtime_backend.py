@@ -17,7 +17,7 @@ import numpy as np
 import asyncio
 import websockets
 import json
-from collections import deque
+import collections
 # ================= CONFIG =================
 WINDOW_SIZE = 10         # Smaller window for smoother updates
 STABILITY_THRESHOLD = 3  # Consecutive BAD predictions before declaring BAD
@@ -40,7 +40,7 @@ except Exception as e:
     exit(1)
 
 # Buffer for sliding window
-buffer = deque(maxlen=WINDOW_SIZE)
+buffer = collections.deque(maxlen=WINDOW_SIZE)
 dashboard_clients = set()
 sensor_clients = set()
 

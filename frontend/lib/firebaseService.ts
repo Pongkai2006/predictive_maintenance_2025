@@ -10,7 +10,7 @@ export interface RawSensorData {
 }
 
 export interface MachineStatusData {
-    state: 'GOOD' | 'BAD';
+    state: 'GOOD' | 'BAD' | 'READY';
     prob_bad: number;
     updated_at: number;
     data_timestamp?: number; // Sync key
