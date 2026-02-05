@@ -61,6 +61,9 @@ export default function App() {
       // Load initial chart data
       getLatestRawData(30, (initialData) => {
         setVibrationData(initialData);
+        if (initialData.length > 0) {
+          setHasData(true);
+        }
       });
 
       // 2. WebSocket for AI Status
