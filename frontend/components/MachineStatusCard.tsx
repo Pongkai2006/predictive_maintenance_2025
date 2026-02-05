@@ -27,7 +27,7 @@ export function MachineStatusCard({ status }: MachineStatusCardProps) {
 
   const isGood = status.condition === 'GOOD';
 
-  const isGood = status.condition === 'GOOD';
+
   const isReady = status.condition === 'READY';
 
   if (isReady) {
