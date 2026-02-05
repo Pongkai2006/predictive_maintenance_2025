@@ -137,33 +137,57 @@ async def main():
     print(f"[*] Starting WebSocket server on port {WS_PORT}...")
     async with websockets.serve(handler, "0.0.0.0", WS_PORT, process_request=health_check):
         print(f"[+] WebSocket server running")
-        print(f"[*] Starting real-time monitoring loop...\n")
+        print(f"[*] Starting True Real-Time monitoring loop...\n")
 
-        processed_batches = set()
+        # --- 1. Startup: Jump to the Present ---
+        # Get the very last batch key currently in DB.
+        # We will ONLY process data that comes AFTER this key.
+        print("[*] Syncing with stream head...")
+        last_key = None
+        try:
+            initial_snap = db.reference("/sensor/batchAcceleration").order_by_key().limit_to_last(1).get()
+            if initial_snap:
+                last_key = list(initial_snap.keys())[0]
+                print(f"[+] Synced. Ignoring history before key: {last_key}")
+            else:
+                print("[!] Database empty. Waiting for first batch...")
+        except Exception as e:
+            print(f"[!] Init Error: {e}")
+
+        # ---------------------------------------
+
+        total_processed_count = 0
         loop = asyncio.get_running_loop()
         executor = ThreadPoolExecutor(max_workers=1)
 
         while True:
             try:
-                # Run blocking Firebase call in a separate thread
-                batches = await loop.run_in_executor(executor, get_firebase_batches)
+                # --- 2. Forward-Only Query ---
+                # Fetch only batches NEWER than our last seen key
+                query = db.reference("/sensor/batchAcceleration").order_by_key()
+                
+                if last_key:
+                    query = query.start_after(last_key)
+                
+                # Limit to 10 to keep it somewhat real-time if a burst comes in
+                query = query.limit_to_first(10)
+                
+                # Run blocking Firebase call
+                batches = await loop.run_in_executor(executor, query.get)
                 
                 if not batches:
-                    print("[.] Waiting for data...", end='\r')
-                    await asyncio.sleep(POLL_INTERVAL)
+                    # No new data yet
+                    await asyncio.sleep(0.1)  # Fast poll for responsiveness
                     continue
                 
-                batch_keys = sorted(batches.keys())
-                new_batches_found = False
+                # -----------------------------
                 
-                # Process only new batches
+                # Sort keys to ensure chronological order
+                batch_keys = sorted(batches.keys())
+                
                 for key in batch_keys:
-                    if key in processed_batches:
-                        continue
-                        
-                    new_batches_found = True
                     batch_data = batches[key]
-                    print(f"[*] Processing batch {key} ({len(batch_data)} samples)")
+                    print(f"[*] Processing NEW batch {key} ({len(batch_data)} samples)")
                     
                     # Add all batch data to buffer
                     batch_max_prob = 0.0
@@ -183,22 +207,46 @@ async def main():
                             # Track peak probability in this batch
                             if prob_bad > batch_max_prob:
                                 batch_max_prob = prob_bad
-        
+                    
                     # End of batch processing
                     state = "BAD" if batch_max_prob > CONFIDENCE_THRESHOLD else "GOOD"
                     last_timestamp = batch_data[-1].get("timestamp", int(time.time()*1000))
         
                     # Broadcast immediately via WebSocket
                     await broadcast_status(state, batch_max_prob, last_timestamp)
+
+                    # --- Sync to Firebase (For Frontend Persistence) ---
+                    # Update status for every batch since we are now true real-time
+                    # (No catch-up speed concern anymore)
+                    try:
+                        status_data = {
+                            "state": state,
+                            "prob_bad": batch_max_prob,
+                            "updated_at": int(time.time() * 1000),
+                            "data_timestamp": last_timestamp
+                        }
+                        await loop.run_in_executor(executor, lambda: db.reference("/sensor/status").set(status_data))
+                    except Exception as e:
+                        print(f"[!] Firebase Status Sync Failed: {e}")
+                    # ---------------------------------------------------
                         
-                    print(f"[i] Processed {len(batch_data)} samples")
-                    processed_batches.add(key)
-                
-                if not new_batches_found:
-                    await asyncio.sleep(POLL_INTERVAL)
-                else:
-                    # Short sleep to prevent CPU spinning if data is pouring in
-                    await asyncio.sleep(0.1)
+                    # Update last_key to this one, so next loop starts after this
+                    last_key = key
+                    total_processed_count += 1
+
+                    # --- Auto-Cleanup Trigger (Every 50 batches) ---
+                    if total_processed_count % 50 == 0:
+                        print(f"[*] Cleanup Triggered: Removing oldest 50 batches...")
+                        try:
+                            # Get oldest 50 keys (from the very beginning of DB)
+                            oldest_batches = db.reference("/sensor/batchAcceleration").order_by_key().limit_to_first(50).get()
+                            if oldest_batches:
+                                updates = {k: None for k in oldest_batches.keys()}
+                                db.reference("/sensor/batchAcceleration").update(updates)
+                                print(f"[+] Cleanup Done: Removed {len(updates)} old batches")
+                        except Exception as e:
+                            print(f"[!] Cleanup Failed: {e}")
+                    # -----------------------------------------------
                 
             except Exception as e:
                 print(f"[!] Unexpected error: {e}")
