@@ -68,23 +68,38 @@ def extract_features(data_points):
         np.ptp(mag)                             # Peak-to-peak
     ]]
 
-async def broadcast_status(state, prob_bad, timestamp=None):
-    """Broadcast classification result to Dashboard Clients"""
+# State for "Latest Known Status" (to attach to every data point)
+latest_inference = {
+    "state": "READY",
+    "prob_bad": 0.0
+}
+
+async def broadcast_combined(data_item, state_info):
+    """
+    Broadcast a combined packet: Raw Data (X,Y,Z) + Latest AI Status
+    This ensures the Dashboard gets everything in one stream.
+    """
     if not dashboard_clients:
         return
         
-    data = json.dumps({
-        "state": state,
-        "prob_bad": prob_bad,
-        "updated_at": int(time.time() * 1000),  # Server time
-        "data_timestamp": timestamp             # Sensor time
+    message = json.dumps({
+        # Raw Data (Graph)
+        "X": data_item.get("X", 0),
+        "Y": data_item.get("Y", 0),
+        "Z": data_item.get("Z", 0),
+        "timestamp": data_item.get("timestamp", int(time.time()*1000)),
+        
+        # AI Status (Card)
+        "state": state_info["state"],
+        "prob_bad": state_info["prob_bad"],
+        "updated_at": int(time.time() * 1000)
     })
     
     # Remove closed connections automatically
     to_remove = set()
     for client in dashboard_clients:
         try:
-            await client.send(data)
+            await client.send(message)
         except websockets.exceptions.ConnectionClosed:
             to_remove.add(client)
     
@@ -104,6 +119,9 @@ async def handle_sensor(websocket):
     """Handle ESP32 Sensor connections (Input)"""
     print(f"[+] SENSOR CONNECTED: {websocket.remote_address}")
     sensor_clients.add(websocket)
+    
+    # Reset buffer on new connection? No, keep history.
+    
     try:
         async for message in websocket:
             try:
@@ -123,13 +141,15 @@ async def handle_sensor(websocket):
                         prob = model.predict_proba(features)[0]
                         prob_bad = prob[1]
                         
-                        state = "BAD" if prob_bad > CONFIDENCE_THRESHOLD else "GOOD"
+                        # Update global state
+                        latest_inference["state"] = "BAD" if prob_bad > CONFIDENCE_THRESHOLD else "GOOD"
+                        latest_inference["prob_bad"] = prob_bad
                         
-                        # 4. Broadcast Immediately (Zero Latency)
-                        await broadcast_status(state, prob_bad, item.get("timestamp"))
+                    # 4. DATA FORWARDING (Zero Latency)
+                    # We send EVERY packet to the dashboard immediately.
+                    # It carries the *latest known* status.
+                    await broadcast_combined(item, latest_inference)
                         
-                        # (Optional) We could also push to Firebase here for history/graph backup
-                        # but for now we focus on pure speed.
             except json.JSONDecodeError:
                 print(f"[!] Invalid JSON from sensor")
             except Exception as e:
