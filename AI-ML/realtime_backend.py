@@ -156,10 +156,9 @@ async def main():
         except Exception as e:
             print(f"[!] Wipe Failed (Not Critical): {e}")
         
-        # We start with no last_key because DB is empty
-        last_key = None
-        # --------------------------------------------------
-
+        # Track last processed key to avoid duplicates
+        last_processed_key = None
+        
         processed_batches = set()
         total_processed_count = 0
         loop = asyncio.get_running_loop()
@@ -167,28 +166,29 @@ async def main():
 
         while True:
             try:
-                # --- 2. Forward-Only Query ---
-                # Fetch only batches NEWER than our last seen key
-                query = db.reference("/sensor/batchAcceleration").order_by_key()
-                
-                if last_key:
-                    query = query.start_after(last_key)
-                
-                # Limit to 10 to catch up efficiently
-                query = query.limit_to_first(10)
-                
-                # Run blocking Firebase call
-                batches = await loop.run_in_executor(executor, query.get)
+                # --- 2. HEAD-ONLY Query (Drop-Frame Mode) ---
+                # Always grab the single latest batch. Ignore queue.
+                # This ensures we are always sync'd with the absolute latest sensor data.
+                batches = await loop.run_in_executor(
+                    executor, 
+                    lambda: db.reference("/sensor/batchAcceleration").order_by_key().limit_to_last(1).get()
+                )
                 
                 if not batches:
                     await asyncio.sleep(0.1)
                     continue
                 
-                batch_keys = sorted(batches.keys())
+                # Get the single latest key
+                key = list(batches.keys())[0]
                 
-                for key in batch_keys:
-                    batch_data = batches[key]
-                    print(f"[*] Processing NEW batch {key} ({len(batch_data)} samples)")
+                if key == last_processed_key:
+                    # No new data yet, wait briefly
+                    await asyncio.sleep(0.05)
+                    continue
+                    
+                last_processed_key = key
+                batch_data = batches[key]
+                print(f"[*] Processing LIVE batch {key} ({len(batch_data)} samples)")
                     
                     # Add all batch data to buffer
                     batch_max_prob = 0.0
@@ -239,8 +239,7 @@ async def main():
                         print(f"[!] Firebase Status Sync Failed: {e}")
                     # ---------------------------------------------------
                         
-                    # Update last_key to this one, so next loop starts after this
-                    last_key = key
+                    # Update count
                     total_processed_count += 1
 
                     # --- Auto-Cleanup Trigger (Every 50 batches) ---
