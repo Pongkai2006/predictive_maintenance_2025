@@ -241,7 +241,7 @@ export default function App() {
         </div>
 
         {/* Main Status and Stats Grid */}
-        {!hasData || !status ? (
+        {!hasData ? (
           <div className="flex flex-col items-center justify-center min-h-[400px] space-y-4">
             <div className="animate-pulse">
               <div className="h-16 w-16 rounded-full bg-blue-100 dark:bg-blue-900/30 flex items-center justify-center">
@@ -275,7 +275,7 @@ export default function App() {
                   value={avgVibration.x.toFixed(2)}
                   unit="m/s²"
                   icon={Activity}
-                  trend={status.condition === 'GOOD' ? 'stable' : 'warning'}
+                  trend={(!status || status.condition === 'GOOD') ? 'stable' : 'warning'}
                   subtext={currentDataTimestamp ? new Date(currentDataTimestamp).toLocaleTimeString() : undefined}
                 />
                 <StatsCard
@@ -283,7 +283,7 @@ export default function App() {
                   value={avgVibration.y.toFixed(2)}
                   unit="m/s²"
                   icon={Activity}
-                  trend={status.condition === 'GOOD' ? 'stable' : 'warning'}
+                  trend={(!status || status.condition === 'GOOD') ? 'stable' : 'warning'}
                   subtext={currentDataTimestamp ? new Date(currentDataTimestamp).toLocaleTimeString() : undefined}
                 />
                 <StatsCard
@@ -291,7 +291,7 @@ export default function App() {
                   value={avgVibration.z.toFixed(2)}
                   unit="m/s²"
                   icon={Activity}
-                  trend={status.condition === 'GOOD' ? 'stable' : 'warning'}
+                  trend={(!status || status.condition === 'GOOD') ? 'stable' : 'warning'}
                   subtext={currentDataTimestamp ? new Date(currentDataTimestamp).toLocaleTimeString() : undefined}
                 />
               </div>
@@ -303,7 +303,7 @@ export default function App() {
                 <h2 className="text-slate-900 dark:text-slate-50">
                   Real-Time Vibration Signals
                 </h2>
-                {status.condition === 'BAD' && (
+                {status && status.condition === 'BAD' && (
                   <div className="flex items-center gap-2 text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-950/30 px-3 py-1.5 rounded-lg">
                     <AlertCircle className="size-4" />
                     <span className="text-sm">Anomaly Detected</span>

@@ -3,10 +3,28 @@ import { CheckCircle2, XCircle } from 'lucide-react';
 import { MachineStatus } from '@/app/page';
 
 interface MachineStatusCardProps {
-  status: MachineStatus;
+  status: MachineStatus | null;
 }
 
 export function MachineStatusCard({ status }: MachineStatusCardProps) {
+  if (!status) {
+    return (
+      <Card className="h-full border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+        <CardContent className="p-6 flex flex-col items-center justify-center h-full space-y-4">
+          <div className="relative">
+            <div className="size-20 md:size-24 rounded-full border-4 border-slate-200 dark:border-slate-700 border-t-blue-500 animate-spin" />
+          </div>
+          <div className="text-center space-y-2">
+            <div className="inline-block px-6 py-2 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-600 dark:text-slate-300">
+              <span className="tracking-wider">STATUS PENDING</span>
+            </div>
+            <p className="text-sm text-slate-500">Waiting for AI Backend...</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   const isGood = status.condition === 'GOOD';
 
   return (
