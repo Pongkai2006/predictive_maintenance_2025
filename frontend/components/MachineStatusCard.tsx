@@ -27,6 +27,27 @@ export function MachineStatusCard({ status }: MachineStatusCardProps) {
 
   const isGood = status.condition === 'GOOD';
 
+  const isGood = status.condition === 'GOOD';
+  const isReady = status.condition === 'READY';
+
+  if (isReady) {
+    return (
+      <Card className="h-full border-2 border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-800/50">
+        <CardContent className="p-6 flex flex-col items-center justify-center h-full space-y-4">
+          <div className="relative">
+            <CheckCircle2 className="size-20 md:size-24 text-none text-slate-400" />
+          </div>
+          <div className="text-center space-y-2">
+            <div className="inline-block px-6 py-2 rounded-full bg-slate-200 dark:bg-slate-700 text-slate-800 dark:text-slate-200">
+              <span className="tracking-wider font-bold">SYSTEM READY</span>
+            </div>
+            <p className="text-sm text-slate-500">Waiting for Sensor Data...</p>
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
   return (
     <Card className="h-full border-2 transition-colors duration-500"
       style={{
@@ -87,7 +108,7 @@ export function MachineStatusCard({ status }: MachineStatusCardProps) {
                   fontWeight: 700
                 }}
               >
-                {status.confidence}
+                {status.confidence.toFixed(1)}
               </span>
               <span
                 className="text-xl"

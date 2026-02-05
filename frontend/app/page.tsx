@@ -14,7 +14,7 @@ export interface VibrationData {
 }
 
 export interface MachineStatus {
-  condition: 'GOOD' | 'BAD';
+  condition: 'GOOD' | 'BAD' | 'READY';
   confidence: number;
   lastUpdate: Date;
   timestamp?: number; // Sync key

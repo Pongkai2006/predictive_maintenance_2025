@@ -145,7 +145,14 @@ async def main():
             # Delete everything to start fresh
             db.reference("/sensor/batchAcceleration").delete()
             db.reference("/sensor/status").delete()
-            print("[+] Database Wiped. Ready for fresh real-time data.")
+            # WRITE "READY" STATUS IMMEDIATELY
+            db.reference("/sensor/status").set({
+                "state": "READY",
+                "prob_bad": 0.0,
+                "updated_at": int(time.time() * 1000),
+                "data_timestamp": 0
+            })
+            print("[+] Database Wiped & Status set to READY.")
         except Exception as e:
             print(f"[!] Wipe Failed (Not Critical): {e}")
         
@@ -201,12 +208,20 @@ async def main():
                             # Track peak probability in this batch
                             if prob_bad > batch_max_prob:
                                 batch_max_prob = prob_bad
-                    
+                            
+                            # --- INTERMEDIATE BROADCAST (Per-Sample Real-Time) ---
+                            # Broadcast immediately so UI updates with graph
+                            current_state = "BAD" if prob_bad > CONFIDENCE_THRESHOLD else "GOOD"
+                            # We use the batch's last timestamp as a base, but ideally we'd want per-sample time.
+                            # For now, this is enough to trigger the UI update.
+                            await broadcast_status(current_state, prob_bad, item.get("timestamp"))
+                            # -----------------------------------------------------
+
                     # End of batch processing
                     state = "BAD" if batch_max_prob > CONFIDENCE_THRESHOLD else "GOOD"
                     last_timestamp = batch_data[-1].get("timestamp", int(time.time()*1000))
         
-                    # Broadcast immediately via WebSocket
+                    # Final Broadcast (Redundant but safe for sync)
                     await broadcast_status(state, batch_max_prob, last_timestamp)
 
                     # --- Sync to Firebase (For Frontend Persistence) ---
