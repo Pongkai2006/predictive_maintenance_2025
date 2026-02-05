@@ -139,55 +139,55 @@ async def main():
         print(f"[+] WebSocket server running")
         print(f"[*] Starting True Real-Time monitoring loop...\n")
 
-        # --- 1. Startup: Jump to the Present ---
-        # Get the very last batch key currently in DB.
-        # We will ONLY process data that comes AFTER this key.
-        print("[*] Syncing with stream head...")
-        last_key = None
+        # --- 1. SYSTEM RENEWAL: HARD RESET ---
+        print("[!] PERFORMING HARD RESET: Wiping old database data...")
         try:
-            initial_snap = db.reference("/sensor/batchAcceleration").order_by_key().limit_to_last(1).get()
-            if initial_snap:
-                last_key = list(initial_snap.keys())[0]
-                print(f"[+] Synced. Ignoring history before key: {last_key}")
-            else:
-                print("[!] Database empty. Waiting for first batch...")
+            # Delete everything to ensure clean slate
+            db.reference("/sensor/batchAcceleration").delete()
+            db.reference("/sensor/status").delete()
+            print("[+] Database Wiped. Ready for fresh real-time data.")
         except Exception as e:
-            print(f"[!] Init Error: {e}")
+            print(f"[!] Wipe Failed (Not Critical): {e}")
+        # -------------------------------------
 
-        # ---------------------------------------
-
-        total_processed_count = 0
+        processed_batches = set()
+        total_processed_count = 0 
         loop = asyncio.get_running_loop()
         executor = ThreadPoolExecutor(max_workers=1)
 
         while True:
             try:
                 # --- 2. Forward-Only Query ---
-                # Fetch only batches NEWER than our last seen key
-                query = db.reference("/sensor/batchAcceleration").order_by_key()
-                
-                if last_key:
-                    query = query.start_after(last_key)
-                
-                # Limit to 10 to keep it somewhat real-time if a burst comes in
-                query = query.limit_to_first(10)
-                
-                # Run blocking Firebase call
-                batches = await loop.run_in_executor(executor, query.get)
+                # Since we wiped the DB, we can just get whatever is there.
+                # It is guaranteed to be new.
+                batches = await loop.run_in_executor(executor, lambda: db.reference("/sensor/batchAcceleration").order_by_key().limit_to_last(10).get())
                 
                 if not batches:
-                    # No new data yet
-                    await asyncio.sleep(0.1)  # Fast poll for responsiveness
+                    await asyncio.sleep(0.1)
                     continue
                 
-                # -----------------------------
-                
-                # Sort keys to ensure chronological order
                 batch_keys = sorted(batches.keys())
                 
                 for key in batch_keys:
+                    if key in processed_batches:
+                        continue
+                        
                     batch_data = batches[key]
-                    print(f"[*] Processing NEW batch {key} ({len(batch_data)} samples)")
+                    
+                    # --- 3. STRICT TIME FILTER ---
+                    # Logic Gate: If data is older than 10 seconds, DROP IT.
+                    # This protects us if the DB wipe failed or old data lingered.
+                    last_sample_time = batch_data[-1].get("timestamp", 0)
+                    now = int(time.time() * 1000)
+                    age_seconds = (now - last_sample_time) / 1000
+                    
+                    if age_seconds > 10:
+                        print(f"[x] Dropped Old Data (Age: {age_seconds:.1f}s) - Key: {key}")
+                        processed_batches.add(key) 
+                        continue # Skip processing
+                    # -----------------------------
+
+                    print(f"[*] Processing NEW batch {key} ({len(batch_data)} samples) | Latency: {age_seconds:.2f}s")
                     
                     # Add all batch data to buffer
                     batch_max_prob = 0.0
