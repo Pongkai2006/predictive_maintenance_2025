@@ -17,6 +17,7 @@ import numpy as np
 import asyncio
 import websockets
 import json
+from collections import deque
 # ================= CONFIG =================
 WINDOW_SIZE = 10         # Smaller window for smoother updates
 STABILITY_THRESHOLD = 3  # Consecutive BAD predictions before declaring BAD
@@ -138,9 +139,8 @@ async def handle_sensor(websocket):
         sensor_clients.discard(websocket)
         print("[-] Sensor disconnected")
 
-async def handler(websocket):
+async def handler(websocket, path):
     """Router for WebSocket connections"""
-    path = websocket.path
     if path == "/sensor":
         await handle_sensor(websocket)
     else:
@@ -169,7 +169,7 @@ async def main():
     # except Exception as e:
     #     print(f"[!] Firebase Init Warning: {e}")
 
-    async with websockets.serve(handler, "0.0.0.0", WS_PORT, process_request=health_check):
+    async with websockets.serve(handler, "0.0.0.0", WS_PORT):
         print(f"[+] Server Running. Waiting for Sensor Stream...\n")
         await asyncio.get_running_loop().create_future()  # Run forever
 
