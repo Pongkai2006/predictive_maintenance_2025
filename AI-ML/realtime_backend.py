@@ -17,7 +17,7 @@ import numpy as np
 import asyncio
 import websockets
 import json
-import collections
+from collections import deque
 # ================= CONFIG =================
 WINDOW_SIZE = 10         # Smaller window for smoother updates
 STABILITY_THRESHOLD = 3  # Consecutive BAD predictions before declaring BAD
@@ -30,7 +30,6 @@ print("[*] Starting Predictive Maintenance Backend (Direct WebSocket Mode)...")
 
 # Load trained model
 
-# Load trained model
 try:
     model = joblib.load("pdm_binary.pkl")
     print("[+] Loaded ML model (pdm_binary.pkl)")
@@ -40,7 +39,7 @@ except Exception as e:
     exit(1)
 
 # Buffer for sliding window
-buffer = collections.deque(maxlen=WINDOW_SIZE)
+buffer = deque(maxlen=WINDOW_SIZE)
 dashboard_clients = set()
 sensor_clients = set()
 

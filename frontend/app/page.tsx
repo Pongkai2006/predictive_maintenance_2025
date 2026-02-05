@@ -8,10 +8,12 @@ import { Activity, Clock, AlertCircle } from 'lucide-react';
 
 export interface VibrationData {
   timestamp: number;
-  X: number;  // ESP32 uses capital letters
+  X: number;
   Y: number;
   Z: number;
 }
+
+export type RawSensorData = VibrationData;
 
 export interface MachineStatus {
   condition: 'GOOD' | 'BAD' | 'READY';
