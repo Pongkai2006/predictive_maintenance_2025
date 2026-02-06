@@ -17,7 +17,7 @@ module.exports = {
 
     // Connection Limits
     MAX_SENSOR_CLIENTS: parseInt(process.env.MAX_SENSOR_CLIENTS) || 10,
-    MAX_DASHBOARD_CLIENTS: parseInt(process.env.MAX_DASHBOARD_CLIENTS) || 50,
+    MAX_DASHBOARD_CLIENTS: parseInt(process.env.MAX_DASHBOARD_CLIENTS) || 100,
 
     // Logging
     LOG_LEVEL: process.env.LOG_LEVEL || 'info', // 'debug', 'info', 'warn', 'error'
