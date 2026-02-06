@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import { MachineStatusCard } from '@/components/MachineStatusCard';
 import { VibrationChart } from '@/components/VibrationChart';
 import { StatsCard } from '@/components/StatsCard';
@@ -18,7 +18,7 @@ export default function App() {
   const { formattedUptime } = useConnectionStatus();
 
   // WebSocket connection with message handler
-  const { isConnected, hasData } = useWebSocketData((message: WebSocketMessage) => {
+  const handleWebSocketMessage = useCallback((message: WebSocketMessage) => {
     // Add data point to visualization
     addToBuffer({
       X: message.X,
@@ -34,7 +34,9 @@ export default function App() {
       lastUpdate: new Date(message.updated_at),
       timestamp: message.timestamp
     });
-  });
+  }, [addToBuffer]);
+
+  const { isConnected, hasData } = useWebSocketData(handleWebSocketMessage);
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-900 dark:to-slate-800 p-4 md:p-6 lg:p-8">
