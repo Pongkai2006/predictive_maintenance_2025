@@ -12,7 +12,7 @@ interface UseWebSocketDataReturn {
     lastMessage: WebSocketMessage | null;
 }
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://pbl-backend-okmj.onrender.com';
+const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://predictive-maintenance-2025.onrender.com';
 // const WS_URL = 'ws://localhost:8765'; // For local development
 
 export function useWebSocketData(
