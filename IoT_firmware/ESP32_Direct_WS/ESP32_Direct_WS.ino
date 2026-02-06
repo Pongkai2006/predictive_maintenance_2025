@@ -14,7 +14,7 @@ const char* password = "25491123";
 // WebSocket Server Configuration
 // For local testing: "localhost" or "192.168.x.x"
 // For production: "pbl-backend-okmj.onrender.com"
-const char* ws_host = "pbl-backend-okmj.onrender.com";
+const char* ws_host = "predictive-maintenance-2025.onrender.com";
 const int ws_port = 443;  // Use 443 for SSL, 8765 for local
 const char* ws_path = "/sensor";  // Backend endpoint for sensor data
 
