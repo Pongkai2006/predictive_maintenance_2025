@@ -1,6 +1,6 @@
 import { Card, CardContent } from './ui/card';
 import { CheckCircle2, XCircle } from 'lucide-react';
-import { MachineStatus } from '@/app/page';
+import { MachineStatus } from '@/lib/types';
 
 interface MachineStatusCardProps {
   status: MachineStatus | null;
