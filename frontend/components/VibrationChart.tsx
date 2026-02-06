@@ -1,6 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
-import { VibrationData } from '@/app/page';
+import { VibrationData } from '@/lib/types';
 
 interface VibrationChartProps {
   data: VibrationData[];
