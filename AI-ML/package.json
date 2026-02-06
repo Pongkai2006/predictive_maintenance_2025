@@ -1,0 +1,30 @@
+{
+    "name": "predictive-maintenance-backend",
+    "version": "2.0.0",
+    "description": "Node.js WebSocket backend for predictive maintenance system",
+    "main": "server/index.js",
+    "scripts": {
+        "start": "node server/index.js",
+        "dev": "node --watch server/index.js",
+        "legacy": "node websocket_server.js",
+        "test": "echo \"Error: no tests yet\" && exit 1",
+        "lint": "eslint server/**/*.js"
+    },
+    "keywords": [
+        "websocket",
+        "esp32",
+        "ml",
+        "predictive-maintenance"
+    ],
+    "author": "",
+    "license": "MIT",
+    "dependencies": {
+        "ws": "^8.16.0"
+    },
+    "devDependencies": {
+        "nodemon": "^3.0.3"
+    },
+    "engines": {
+        "node": ">=18.0.0"
+    }
+}
