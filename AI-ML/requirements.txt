@@ -1,5 +1,5 @@
 numpy
 joblib
-firebase-admin
+
 websockets
 scikit-learn==1.7.0
