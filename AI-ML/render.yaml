@@ -4,9 +4,16 @@ services:
     env: node
     region: singapore
     buildCommand: npm install && pip install -r requirements.txt
-    startCommand: node websocket_server.js
+    startCommand: npm start
     envVars:
       - key: PORT
         sync: false
       - key: PYTHON_VERSION
         value: "3.11"
+      - key: NODE_ENV
+        value: production
+      - key: LOG_LEVEL
+        value: info
+      - key: CONFIDENCE_THRESHOLD
+        value: "0.7"
+
