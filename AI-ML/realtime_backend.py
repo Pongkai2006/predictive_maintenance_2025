@@ -188,7 +188,17 @@ async def main():
     # except Exception as e:
     #     print(f"[!] Firebase Init Warning: {e}")
 
-    async with websockets.serve(handler, "0.0.0.0", WS_PORT):
+    # Accept all connections (needed for Render's SSL proxy + ESP32)
+    async def process_request(path, request_headers):
+        """Accept all WebSocket connections regardless of origin"""
+        return None  # None = accept connection
+    
+    async with websockets.serve(
+        handler, 
+        "0.0.0.0", 
+        WS_PORT,
+        process_request=process_request  # Bypass origin checking
+    ):
         print(f"[+] Server Running. Waiting for Sensor Stream...\n")
         await asyncio.get_running_loop().create_future()  # Run forever
 
