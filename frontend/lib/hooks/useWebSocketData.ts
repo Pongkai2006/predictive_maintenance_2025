@@ -3,7 +3,7 @@
  * Manages WebSocket lifecycle and provides data stream
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import type { WebSocketMessage } from '../types';
 
 interface UseWebSocketDataReturn {
@@ -21,6 +21,8 @@ export function useWebSocketData(
     const [isConnected, setIsConnected] = useState(false);
     const [hasData, setHasData] = useState(false);
     const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
+    const retryCountRef = useRef(0);
+    const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
     const connect = useCallback(() => {
         const ws = new WebSocket(WS_URL);
@@ -28,6 +30,7 @@ export function useWebSocketData(
         ws.onopen = () => {
             console.log('[WebSocket] Connected');
             setIsConnected(true);
+            retryCountRef.current = 0; // Reset retry count on successful connection
         };
 
         ws.onmessage = (event) => {
@@ -44,9 +47,15 @@ export function useWebSocketData(
         };
 
         ws.onclose = () => {
-            console.log('[WebSocket] Disconnected. Reconnecting in 3s...');
             setIsConnected(false);
-            setTimeout(connect, 3000);
+
+            // Exponential backoff: 1s, 2s, 4s, 8s, 16s, 30s (max)
+            retryCountRef.current++;
+            const delay = Math.min(1000 * Math.pow(2, retryCountRef.current - 1), 30000);
+
+            console.log(`[WebSocket] Disconnected. Reconnecting in ${delay / 1000}s... (attempt ${retryCountRef.current})`);
+
+            reconnectTimeoutRef.current = setTimeout(connect, delay);
         };
 
         ws.onerror = (error) => {
@@ -59,6 +68,9 @@ export function useWebSocketData(
     useEffect(() => {
         const ws = connect();
         return () => {
+            if (reconnectTimeoutRef.current) {
+                clearTimeout(reconnectTimeoutRef.current);
+            }
             ws?.close();
         };
     }, [connect]);
