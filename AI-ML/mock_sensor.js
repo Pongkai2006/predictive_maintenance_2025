@@ -7,7 +7,8 @@
 const WebSocket = require('ws');
 
 // Configuration
-const WS_URL = 'ws://localhost:8765/sensor';
+// const WS_URL = 'ws://localhost:8765/sensor'; // Local
+const WS_URL = 'wss://predictive-maintenance-2025.onrender.com/sensor'; // Production
 const SAMPLE_RATE_MS = 50; // 20Hz (same as ESP32)
 const DEBUG = true;
 

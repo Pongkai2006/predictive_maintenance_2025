@@ -90,11 +90,23 @@ function handleSensorConnection(ws, req) {
                 // Add to buffer
                 const isReady = dataProcessor.addDataPoint(item.X, item.Y, item.Z);
 
-                // Run ML prediction if buffer is full
+                // Run ML prediction with rate limiting
                 let currentInference = mlService.getLatest();
                 if (isReady) {
                     const windowData = dataProcessor.getWindow();
-                    currentInference = await mlService.predict(windowData);
+
+                    // Only run ML if enough time has passed (rate limiting)
+                    const MIN_PREDICTION_INTERVAL = 30000; // 30 seconds
+                    const timeSinceLastPrediction = Date.now() - currentInference.timestamp;
+
+                    if (timeSinceLastPrediction > MIN_PREDICTION_INTERVAL) {
+                        try {
+                            currentInference = await mlService.predict(windowData);
+                        } catch (err) {
+                            logger.error('ML prediction failed:', err.message);
+                            // Continue with last known state
+                        }
+                    }
                 }
 
                 // Broadcast to dashboard immediately (zero latency)
