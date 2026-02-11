@@ -30,24 +30,53 @@ class MLService {
                 return;
             }
 
+            // CRITICAL: Add timeout to prevent hanging
+            const TIMEOUT_MS = 5000; // 5 second timeout
+            let timeoutId;
+            let pythonProcess;
+
             // Call Python ML script
-            const python = spawn('python', [
-                config.ML_SCRIPT_PATH,
-                JSON.stringify(windowData)
-            ]);
+            try {
+                pythonProcess = spawn('python', [
+                    config.ML_SCRIPT_PATH,
+                    JSON.stringify(windowData)
+                ], {
+                    timeout: TIMEOUT_MS,
+                    killSignal: 'SIGTERM'
+                });
+            } catch (err) {
+                logger.error('Failed to spawn Python process:', err.message);
+                resolve(this.latestInference);
+                return;
+            }
 
             let result = '';
             let errorOutput = '';
+            let processCompleted = false;
 
-            python.stdout.on('data', (data) => {
+            // Timeout handler
+            timeoutId = setTimeout(() => {
+                if (!processCompleted && pythonProcess) {
+                    logger.error('ML prediction timeout - killing process');
+                    pythonProcess.kill('SIGKILL');
+                    processCompleted = true;
+                    resolve(this.latestInference);
+                }
+            }, TIMEOUT_MS);
+
+            pythonProcess.stdout.on('data', (data) => {
                 result += data.toString();
             });
 
-            python.stderr.on('data', (data) => {
+            pythonProcess.stderr.on('data', (data) => {
                 errorOutput += data.toString();
             });
 
-            python.on('close', (code) => {
+            pythonProcess.on('close', (code) => {
+                if (processCompleted) return; // Already handled by timeout
+                processCompleted = true;
+                clearTimeout(timeoutId);
+
                 if (code === 0) {
                     try {
                         const prediction = JSON.parse(result);
@@ -77,8 +106,11 @@ class MLService {
                 }
             });
 
-            python.on('error', (err) => {
-                logger.error('Failed to spawn Python process:', err.message);
+            pythonProcess.on('error', (err) => {
+                if (processCompleted) return;
+                processCompleted = true;
+                clearTimeout(timeoutId);
+                logger.error('Python process error:', err.message);
                 resolve(this.latestInference);
             });
         });
