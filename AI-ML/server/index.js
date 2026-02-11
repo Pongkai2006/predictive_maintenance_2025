@@ -88,27 +88,30 @@ function handleSensorConnection(ws, req) {
                 }
 
                 // Add to buffer
-                const isReady = dataProcessor.addDataPoint(item.X, item.Y, item.Z);
+                dataProcessor.addDataPoint(item.X, item.Y, item.Z);
 
-                // ML prediction with aggressive rate limiting (30s cooldown)
-                let currentInference = mlService.getLatest();
+                // Mock AI prediction (no Python needed - instant, reliable)
+                // Calculate vibration magnitude
+                const magnitude = Math.sqrt(item.X * item.X + item.Y * item.Y + item.Z * item.Z);
 
-                if (isReady) {
-                    const windowData = dataProcessor.getWindow();
+                // Simple algorithm: higher vibration = higher probability of bad state
+                // Typical good vibration: 9-11 m/s² (gravity dominated)
+                // Bad vibration: >12 m/s² (excessive movement)
+                const baseline = 10.0; // Normal gravity + small vibration
+                const deviation = Math.abs(magnitude - baseline);
 
-                    // Only run ML every 30 seconds to prevent timeout spam
-                    const MIN_PREDICTION_INTERVAL = 30000; // 30 seconds
-                    const timeSinceLastPrediction = Date.now() - currentInference.timestamp;
+                // Calculate probability (0.0 to 1.0)
+                // Low deviation (<1) -> 0-20% bad
+                // Medium deviation (1-3) -> 20-60% bad  
+                // High deviation (>3) -> 60-100% bad
+                const prob_bad = Math.min(0.95, deviation / 5.0);
+                const state = prob_bad > 0.6 ? 'BAD' : 'GOOD';
 
-                    if (timeSinceLastPrediction > MIN_PREDICTION_INTERVAL) {
-                        try {
-                            currentInference = await mlService.predict(windowData);
-                        } catch (err) {
-                            logger.error('ML prediction failed:', err.message);
-                            // Continue with last known state
-                        }
-                    }
-                }
+                const currentInference = {
+                    state: state,
+                    prob_bad: prob_bad,
+                    timestamp: Date.now()
+                };
 
                 // Broadcast to dashboard immediately (zero latency)
                 await connectionManager.broadcastToDashboard({
