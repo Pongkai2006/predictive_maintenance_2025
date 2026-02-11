@@ -1,10 +1,10 @@
 #include <WiFi.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
-// Uncomment to use real MPU6050 sensor
-// #include <Adafruit_MPU6050.h>
-// #include <Adafruit_Sensor.h>
-// #include <Wire.h>
+// Using real MPU6050 sensor
+#include <Adafruit_MPU6050.h>
+#include <Adafruit_Sensor.h>
+#include <Wire.h>
 
 // ================= CONFIGURATION =================
 // WiFi Credentials
@@ -12,10 +12,9 @@ const char* ssid = "Theo";
 const char* password = "25491123";
 
 // WebSocket Server Configuration
-// For local testing: "localhost" or "192.168.x.x"
-// For production: "pbl-backend-okmj.onrender.com"
+// PRODUCTION MODE - Connected to Render deployment
 const char* ws_host = "predictive-maintenance-2025.onrender.com";
-const int ws_port = 443;  // Use 443 for SSL, 8765 for local
+const int ws_port = 443;  // SSL/TLS WebSocket (wss://)
 const char* ws_path = "/sensor";  // Backend endpoint for sensor data
 
 // Sensor Configuration
@@ -35,25 +34,12 @@ unsigned long wifi_retry_time = 0;
 unsigned long ws_retry_time = 0;
 unsigned long last_sample_time = 0;
 
-// MPU6050 Sensor (uncomment when using real sensor)
-// Adafruit_MPU6050 mpu;
-// bool sensor_initialized = false;
+// MPU6050 Sensor
+Adafruit_MPU6050 mpu;
+bool sensor_initialized = false;
 
 // ================= SENSOR FUNCTIONS =================
-// Mock sensor data - Replace with real MPU6050 readings
-float getX() { 
-  return (random(-200, 200) / 100.0) + sin(millis() / 1000.0); 
-}
-
-float getY() { 
-  return (random(-200, 200) / 100.0) + cos(millis() / 1000.0); 
-}
-
-float getZ() { 
-  return (random(-200, 200) / 100.0); 
-}
-
-/* Uncomment this when using real MPU6050:
+// Real MPU6050 sensor reading functions
 void readMPU6050(float &x, float &y, float &z) {
   if (!sensor_initialized) {
     x = y = z = 0.0;
@@ -81,7 +67,6 @@ bool initializeMPU6050() {
   if (DEBUG_MODE) Serial.println("[+] MPU6050 initialized successfully");
   return true;
 }
-*/
 // ================= WEBSOCKET EVENT HANDLER =================
 void wsEvent(WStype_t type, uint8_t * payload, size_t length) {
     switch(type) {
@@ -131,11 +116,11 @@ void setup() {
     // Initialize WiFi
     connectWiFi();
     
-    // Initialize MPU6050 Sensor (uncomment when using real sensor)
-    // sensor_initialized = initializeMPU6050();
-    // if (!sensor_initialized && DEBUG_MODE) {
-    //     Serial.println("[!] Running with MOCK sensor data");
-    // }
+    // Initialize MPU6050 Sensor
+    sensor_initialized = initializeMPU6050();
+    if (!sensor_initialized && DEBUG_MODE) {
+        Serial.println("[!] Failed to initialize MPU6050 - sensor readings will be 0.0");
+    }
     
     // Initialize WebSocket Connection
     connectWebSocket();
@@ -244,21 +229,14 @@ void loop() {
     if (millis() - last_sample_time >= SAMPLE_RATE_MS) {
         last_sample_time = millis();
         
-        // Read sensor data
+        // Read sensor data from MPU6050
         float x, y, z;
         
-        // Using mock data (replace with real sensor when available)
-        x = getX();
-        y = getY();
-        z = getZ();
-        
-        /* Uncomment when using real MPU6050:
         if (sensor_initialized) {
             readMPU6050(x, y, z);
         } else {
             x = y = z = 0.0;
         }
-        */
         
         // Create JSON payload
         StaticJsonDocument<200> doc;
