@@ -28,9 +28,12 @@ const bool DEBUG_MODE = true;
 
 // ================= GLOBALS =================
 WebSocketsClient webSocket;
-unsigned long last_sample_time = 0;
-unsigned long wifi_retry_time = 0;
+// Connection state tracking
 bool wifi_connected = false;
+bool ws_connected = false;
+unsigned long wifi_retry_time = 0;
+unsigned long ws_retry_time = 0;
+unsigned long last_sample_time = 0;
 
 // MPU6050 Sensor (uncomment when using real sensor)
 // Adafruit_MPU6050 mpu;
@@ -80,15 +83,17 @@ bool initializeMPU6050() {
 }
 */
 // ================= WEBSOCKET EVENT HANDLER =================
-void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
+void wsEvent(WStype_t type, uint8_t * payload, size_t length) {
     switch(type) {
         case WStype_DISCONNECTED:
+            ws_connected = false;  // Track disconnection
             if (DEBUG_MODE) {
                 Serial.println("[WSc] ❌ Disconnected from server");
             }
             break;
             
         case WStype_CONNECTED:
+            ws_connected = true;  // Track connection
             if (DEBUG_MODE) {
                 Serial.printf("[WSc] ✓ Connected to: %s\n", payload);
                 Serial.println("[WSc] Starting data transmission...");
@@ -102,6 +107,7 @@ void webSocketEvent(WStype_t type, uint8_t * payload, size_t length) {
             break;
             
         case WStype_ERROR:
+            ws_connected = false;  // Track error as disconnected
             if (DEBUG_MODE) {
                 Serial.println("[WSc] ⚠ WebSocket error occurred");
             }
@@ -192,7 +198,7 @@ void connectWebSocket() {
         }
     }
     
-    webSocket.onEvent(webSocketEvent);
+    webSocket.onEvent(wsEvent);
     webSocket.setReconnectInterval(WS_RECONNECT_DELAY);
 }
 // ================= MAIN LOOP =================
@@ -218,6 +224,17 @@ void loop() {
             Serial.println("[+] WiFi reconnected!");
         }
         connectWebSocket();  // Re-establish WebSocket
+    }
+    
+    // Monitor WebSocket connection and reconnect if needed
+    if (WiFi.status() == WL_CONNECTED && !ws_connected) {
+        if (millis() - ws_retry_time > WS_RECONNECT_DELAY) {
+            ws_retry_time = millis();
+            if (DEBUG_MODE) {
+                Serial.println("[*] WebSocket disconnected. Attempting to reconnect...");
+            }
+            connectWebSocket();
+        }
     }
     
     // Process WebSocket events

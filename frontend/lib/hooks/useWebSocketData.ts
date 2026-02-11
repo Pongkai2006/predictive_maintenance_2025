@@ -12,8 +12,8 @@ interface UseWebSocketDataReturn {
     lastMessage: WebSocketMessage | null;
 }
 
-const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://predictive-maintenance-2025.onrender.com';
-// const WS_URL = 'ws://localhost:8765'; // For local development
+// const WS_URL = process.env.NEXT_PUBLIC_WS_URL || 'wss://predictive-maintenance-2025.onrender.com';
+const WS_URL = 'ws://localhost:8765'; // For local development
 
 export function useWebSocketData(
     onMessage: (message: WebSocketMessage) => void
@@ -23,12 +23,26 @@ export function useWebSocketData(
     const [lastMessage, setLastMessage] = useState<WebSocketMessage | null>(null);
     const retryCountRef = useRef(0);
     const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+    const wsRef = useRef<WebSocket | null>(null);
+    const onMessageRef = useRef(onMessage);
+
+    // Keep onMessage ref up to date
+    useEffect(() => {
+        onMessageRef.current = onMessage;
+    }, [onMessage]);
 
     const connect = useCallback(() => {
+        // Cleanup existing connection if any
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+
         const ws = new WebSocket(WS_URL);
+        wsRef.current = ws;
 
         ws.onopen = () => {
-            console.log('[WebSocket] Connected');
+            console.log('[WebSocket] Connected to backend');
             setIsConnected(true);
             retryCountRef.current = 0; // Reset retry count on successful connection
         };
@@ -39,7 +53,7 @@ export function useWebSocketData(
 
                 setLastMessage(data);
                 setHasData(true);
-                onMessage(data);
+                onMessageRef.current(data);
 
             } catch (e) {
                 console.error('[WebSocket] Failed to parse message:', e);
@@ -63,15 +77,21 @@ export function useWebSocketData(
         };
 
         return ws;
-    }, [onMessage]);
+    }, []); // No dependencies - stable callback
 
     useEffect(() => {
-        const ws = connect();
+        console.log('[WebSocket] Initializing connection...');
+        connect();
+
         return () => {
+            console.log('[WebSocket] Cleanup: closing connection');
             if (reconnectTimeoutRef.current) {
                 clearTimeout(reconnectTimeoutRef.current);
             }
-            ws?.close();
+            if (wsRef.current) {
+                wsRef.current.close();
+                wsRef.current = null;
+            }
         };
     }, [connect]);
 
