@@ -87,31 +87,28 @@ function handleSensorConnection(ws, req) {
                     continue;
                 }
 
-                // Add to buffer (for future ML use)
-                dataProcessor.addDataPoint(item.X, item.Y, item.Z);
+                // Add to buffer
+                const isReady = dataProcessor.addDataPoint(item.X, item.Y, item.Z);
 
-                // TEMPORARY: Disable ML prediction to stabilize connections
-                // Using fixed state until ML performance issues are resolved
-                const currentInference = {
-                    state: 'GOOD',
-                    prob_bad: 0.0,
-                    timestamp: Date.now()
-                };
+                // ML prediction with aggressive rate limiting (30s cooldown)
+                let currentInference = mlService.getLatest();
 
-                // TODO: Re-enable ML once Python subprocess is optimized
-                // const isReady = dataProcessor.addDataPoint(item.X, item.Y, item.Z);
-                // if (isReady) {
-                //     const windowData = dataProcessor.getWindow();
-                //     const MIN_PREDICTION_INTERVAL = 30000;
-                //     const timeSinceLastPrediction = Date.now() - currentInference.timestamp;
-                //     if (timeSinceLastPrediction > MIN_PREDICTION_INTERVAL) {
-                //         try {
-                //             currentInference = await mlService.predict(windowData);
-                //         } catch (err) {
-                //             logger.error('ML prediction failed:', err.message);
-                //         }
-                //     }
-                // }
+                if (isReady) {
+                    const windowData = dataProcessor.getWindow();
+
+                    // Only run ML every 30 seconds to prevent timeout spam
+                    const MIN_PREDICTION_INTERVAL = 30000; // 30 seconds
+                    const timeSinceLastPrediction = Date.now() - currentInference.timestamp;
+
+                    if (timeSinceLastPrediction > MIN_PREDICTION_INTERVAL) {
+                        try {
+                            currentInference = await mlService.predict(windowData);
+                        } catch (err) {
+                            logger.error('ML prediction failed:', err.message);
+                            // Continue with last known state
+                        }
+                    }
+                }
 
                 // Broadcast to dashboard immediately (zero latency)
                 await connectionManager.broadcastToDashboard({
