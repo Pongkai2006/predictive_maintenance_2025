@@ -1,10 +1,8 @@
 #include <WiFi.h>
 #include <WebSocketsClient.h>
 #include <ArduinoJson.h>
-// Using real MPU6050 sensor
-#include <Adafruit_MPU6050.h>
-#include <Adafruit_Sensor.h>
 #include <Wire.h>
+#include <MPU6050_light.h>
 
 // ================= CONFIGURATION =================
 // WiFi Credentials
@@ -19,6 +17,7 @@ const char* ws_path = "/sensor";  // Backend endpoint for sensor data
 
 // Sensor Configuration
 const int SAMPLE_RATE_MS = 50;  // 20Hz sampling rate
+const int BATCH_SIZE = 10;  // Send data in batches of 10 samples
 const int WIFI_RETRY_DELAY = 5000;  // 5 seconds between WiFi retries
 const int WS_RECONNECT_DELAY = 3000;  // 3 seconds between WebSocket reconnects
 
@@ -34,38 +33,43 @@ unsigned long wifi_retry_time = 0;
 unsigned long ws_retry_time = 0;
 unsigned long last_sample_time = 0;
 
-// MPU6050 Sensor
-Adafruit_MPU6050 mpu;
+// Batching buffer
+StaticJsonDocument<2048> batchDoc;
+JsonArray batchArray;
+int batch_count = 0;
+
+// MPU6050 Sensor using MPU6050_light library
+MPU6050 mpu(Wire);
 bool sensor_initialized = false;
 
 // ================= SENSOR FUNCTIONS =================
-// Real MPU6050 sensor reading functions
+bool initializeMPU6050() {
+  Wire.begin();
+  byte status = mpu.begin();
+  if (status != 0) {
+    if (DEBUG_MODE) Serial.println("[!] Failed to find MPU6050 chip");
+    return false;
+  }
+  
+  if (DEBUG_MODE) Serial.println("[*] Calculating gyro offsets, do not move sensor...");
+  mpu.calcGyroOffsets();
+  
+  if (DEBUG_MODE) Serial.println("[+] MPU6050 initialized successfully");
+  return true;
+}
+
 void readMPU6050(float &x, float &y, float &z) {
   if (!sensor_initialized) {
     x = y = z = 0.0;
     return;
   }
   
-  sensors_event_t a, g, temp;
-  mpu.getEvent(&a, &g, &temp);
+  mpu.update();
   
-  x = a.acceleration.x;
-  y = a.acceleration.y;
-  z = a.acceleration.z;
-}
-
-bool initializeMPU6050() {
-  if (!mpu.begin()) {
-    if (DEBUG_MODE) Serial.println("[!] Failed to find MPU6050 chip");
-    return false;
-  }
-  
-  mpu.setAccelerometerRange(MPU6050_RANGE_8_G);
-  mpu.setGyroRange(MPU6050_RANGE_500_DEG);
-  mpu.setFilterBandwidth(MPU6050_BAND_21_HZ);
-  
-  if (DEBUG_MODE) Serial.println("[+] MPU6050 initialized successfully");
-  return true;
+  // Convert to m/s² (multiply by gravity)
+  x = mpu.getAccX() * 9.81;
+  y = mpu.getAccY() * 9.81;
+  z = mpu.getAccZ() * 9.81;
 }
 // ================= WEBSOCKET EVENT HANDLER =================
 void wsEvent(WStype_t type, uint8_t * payload, size_t length) {
@@ -122,6 +126,9 @@ void setup() {
         Serial.println("[!] Failed to initialize MPU6050 - sensor readings will be 0.0");
     }
     
+    // Initialize batch array
+    batchArray = batchDoc.to<JsonArray>();
+    
     // Initialize WebSocket Connection
     connectWebSocket();
     
@@ -170,14 +177,17 @@ void connectWebSocket() {
     // PRODUCTION - SSL WebSocket (Render deployment)
     if (ws_port == 443) {
         webSocket.beginSSL(ws_host, ws_port, ws_path);
-        webSocket.enableHeartbeat(15000, 3000, 2);  // Ping every 15s, timeout 3s, 2 retries
+        // CRITICAL: Enable heartbeat to prevent proxy timeout on Render
+        webSocket.enableHeartbeat(15000, 5000, 3);  // Ping every 15s, timeout 5s, 3 retries
         if (DEBUG_MODE) {
             Serial.println("[+] Using SSL WebSocket (Production Mode)");
+            Serial.println("[+] Heartbeat enabled (15s interval)");
         }
     } 
     // LOCAL - Plain WebSocket (development)
     else {
         webSocket.begin(ws_host, ws_port, ws_path);
+        webSocket.enableHeartbeat(15000, 5000, 3);
         if (DEBUG_MODE) {
             Serial.println("[+] Using Plain WebSocket (Local Mode)");
         }
@@ -238,31 +248,41 @@ void loop() {
             x = y = z = 0.0;
         }
         
-        // Create JSON payload
-        StaticJsonDocument<200> doc;
-        doc["X"] = x;
-        doc["Y"] = y;
-        doc["Z"] = z;
-        doc["timestamp"] = millis();
+        // Add to batch array
+        JsonObject item = batchArray.createNestedObject();
+        item["X"] = x;
+        item["Y"] = y;
+        item["Z"] = z;
+        item["timestamp"] = millis();
+        batch_count++;
         
-        String jsonString;
-        serializeJson(doc, jsonString);
-        
-        // Send to backend
-        if (webSocket.isConnected()) {
-            webSocket.sendTXT(jsonString);
-            
-            // Optional: Print every 100th sample to avoid flooding serial
-            static int sample_count = 0;
-            if (DEBUG_MODE && (sample_count++ % 100 == 0)) {
-                Serial.printf("[→] Sent sample #%d: X=%.2f, Y=%.2f, Z=%.2f\n", 
-                             sample_count, x, y, z);
-            }
-        } else if (DEBUG_MODE) {
-            static unsigned long last_warning = 0;
-            if (millis() - last_warning > 5000) {  // Warn every 5 seconds
-                Serial.println("[!] WebSocket not connected. Data not sent.");
-                last_warning = millis();
+        // Send batch when full
+        if (batch_count >= BATCH_SIZE) {
+            if (webSocket.isConnected()) {
+                String jsonString;
+                serializeJson(batchArray, jsonString);
+                webSocket.sendTXT(jsonString);
+                
+                static int total_samples = 0;
+                total_samples += batch_count;
+                
+                if (DEBUG_MODE && (total_samples % 100 == 0)) {
+                    Serial.printf("[→] Sent batch (total samples: %d)\n", total_samples);
+                }
+                
+                // Clear batch
+                batchArray = batchDoc.to<JsonArray>();
+                batch_count = 0;
+                
+            } else if (DEBUG_MODE) {
+                static unsigned long last_warning = 0;
+                if (millis() - last_warning > 5000) {
+                    Serial.println("[!] WebSocket not connected. Batch discarded.");
+                    last_warning = millis();
+                }
+                // Clear batch anyway to prevent memory issues
+                batchArray = batchDoc.to<JsonArray>();
+                batch_count = 0;
             }
         }
     }

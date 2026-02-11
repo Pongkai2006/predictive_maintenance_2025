@@ -121,6 +121,15 @@ function handleSensorConnection(ws, req) {
     ws.on('error', (err) => {
         logger.error('Sensor WebSocket error:', err.message);
     });
+
+    // Heartbeat: respond to ping with pong
+    ws.on('ping', () => {
+        ws.pong();
+    });
+
+    ws.on('pong', () => {
+        // Keep connection alive
+    });
 }
 
 /**
@@ -138,6 +147,15 @@ function handleDashboardConnection(ws, req) {
 
     ws.on('error', (err) => {
         logger.error('Dashboard WebSocket error:', err.message);
+    });
+
+    // Heartbeat: respond to ping with pong
+    ws.on('ping', () => {
+        ws.pong();
+    });
+
+    ws.on('pong', () => {
+        // Keep connection alive
     });
 }
 
