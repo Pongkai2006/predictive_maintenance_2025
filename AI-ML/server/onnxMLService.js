@@ -23,7 +23,10 @@ class ONNXMLService {
      */
     async initialize() {
         try {
-            const modelPath = path.join(__dirname, '..', 'pdm_binary.onnx');
+            // Use process.cwd() to get correct path on Render
+            // Render runs from AI-ML/ directory, so pdm_binary.onnx is at ./pdm_binary.onnx
+            const modelPath = path.join(process.cwd(), 'pdm_binary.onnx');
+            logger.info(`Attempting to load ONNX model from: ${modelPath}`);
             this.session = await ort.InferenceSession.create(modelPath);
             logger.info(`✓ ONNX model loaded: pdm_binary.onnx`);
             return true;
