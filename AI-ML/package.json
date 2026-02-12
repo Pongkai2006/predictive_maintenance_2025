@@ -20,6 +20,7 @@
     "author": "",
     "license": "MIT",
     "dependencies": {
+        "onnxruntime-node": "^1.24.1",
         "ws": "^8.16.0"
     },
     "devDependencies": {
