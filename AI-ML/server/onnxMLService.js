@@ -94,16 +94,20 @@ class ONNXMLService {
             const feeds = { float_input: inputTensor };
             const results = await this.session.run(feeds);
 
-            // Get probability output
-            // RandomForest classifier outputs probabilities for each class
-            const probabilities = results.probabilities.data; // [prob_good, prob_bad]
-            const prob_bad = probabilities[1];
+            // Get probability output (now as tensor, not ZipMap)
+            // With zipmap=False, output is a tensor with shape [1, 2]
+            // results.probabilities is a Tensor with .data = Float32Array([prob_good, prob_bad])
+            const probabilitiesTensor = results.probabilities;
+            const probData = probabilitiesTensor.data; // Float32Array
+
+            const prob_good = probData[0];
+            const prob_bad = probData[1];
 
             // Update inference state
             this.latestInference = {
                 state: prob_bad > 0.7 ? 'BAD' : 'GOOD', // 0.7 threshold from training
                 prob_bad: prob_bad,
-                prob_good: probabilities[0],
+                prob_good: prob_good,
                 timestamp: Date.now()
             };
 

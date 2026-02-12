@@ -27,10 +27,13 @@ print("[+] Loaded model: pdm_binary.pkl")
 initial_type = [('float_input', FloatTensorType([None, 13]))]
 
 # Convert to ONNX
+# CRITICAL: Use options={'zipmap': False} to output raw probabilities as tensor
+# This makes it compatible with onnxruntime-node
 onnx_model = convert_sklearn(
     model, 
     initial_types=initial_type,
-    target_opset=12  # Compatible with most runtimes
+    target_opset=12,  # Compatible with most runtimes
+    options={id(model): {'zipmap': False}}  # Output tensor, not ZipMap
 )
 
 # Save ONNX model
