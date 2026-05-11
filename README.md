@@ -242,7 +242,7 @@ npm run dev
 
 ## 📄 License
 
-This project is part of the Bangkok University PBL 2025 program.
+This project is part of the KOSEN-KMITL PBL 2025 program.
 
 ## 👥 Team
 
