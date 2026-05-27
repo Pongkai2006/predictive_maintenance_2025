@@ -247,7 +247,7 @@ This project is part of the KOSEN-KMITL PBL 2025 program.
 ## 👥 Team
 
 **Predictive Maintenance Team**
-- Bangkok University
+- KOSEN-KMITL
 - PBL 2025
 
 ---
